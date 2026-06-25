@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#08080e">
+<title>Xtra TV – Live Channels</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="dns-prefetch" href="//cdn.jsdelivr.net">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js" as="script">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="root">
+<header>
+  <a class="logo" href="#">
+    <div class="logo-mark">📺</div>
+    <span class="logo-text">Xtra TV</span>
+    <span class="live-badge">LIVE</span>
+  </a>
+  <div class="hdr-right">
+    <a class="contact-btn" href="https://www.facebook.com/JahidulXtra" target="_blank" rel="noopener noreferrer" title="Contact on Facebook">💬 <span class="cb-text">Contact Me</span></a>
+    <button class="open-url-btn" onclick="openUrlModal()">📡 <span>Stream</span></button>
+    <button class="mob-search-btn" id="mobSearchBtn" title="Search channels">🔍</button>
+    <div class="hdr-count" id="hdrCount"></div>
+  </div>
+</header>
+
+<!-- Mobile Search Overlay -->
+<div class="mob-search-overlay" id="mobSearchOverlay">
+  <input type="search" class="mob-search-input" id="mobSearchInput" placeholder="🔍 Search channels…" autocomplete="off" autocorrect="off" autocapitalize="off">
+  <button class="mob-search-close" id="mobSearchClose">✕</button>
+</div>
+
+<!-- URL Modal -->
+<div class="url-modal-backdrop" id="urlModalBackdrop">
+  <div class="url-modal">
+    <h3>📡 Network Stream</h3>
+    <p class="url-hint">Supports HLS (.m3u8), MP4, MKV, WebM, MP3 and any direct stream URL.</p>
+    <input type="url" id="urlInput" placeholder="https://example.com/stream.m3u8" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+    <input type="text" id="urlTitleInput" placeholder="Title (optional)">
+    <div class="url-modal-footer">
+      <button class="um-cancel" id="umCancel">Cancel</button>
+      <button class="um-play" id="umPlay">▶ Play</button>
+    </div>
+  </div>
+</div>
+
+<div class="body-wrap">
+  <div class="player-area">
+    <div class="player-outer">
+      <div class="player-wrapper fit-contain" id="playerWrapper">
+        <video id="videoPlayer" playsinline webkit-playsinline x5-playsinline></video>
+
+        <div class="audio-overlay" id="audioOverlay">
+          <div class="audio-icon">🎵</div>
+          <div class="audio-title" id="audioTitle">Playing…</div>
+          <div class="audio-bars" id="audioBars"></div>
+        </div>
+
+        <div class="overlay ov-empty show" id="ovEmpty">
+          <div class="ei">📡</div>
+          <p class="et">Select a channel to watch</p>
+          <p class="es">Choose a category → pick a channel</p>
+        </div>
+        <div class="overlay ov-load" id="ovLoad">
+          <div class="spinner"></div>
+          <div class="load-nm" id="loadNm">Loading…</div>
+        </div>
+        <div class="overlay ov-err" id="ovErr">
+          <div class="err-icon">📡</div>
+          <div class="err-title" id="errTitle">Stream unavailable</div>
+          <div class="err-body" id="errBody">The channel may be offline.</div>
+          <button class="retry-btn" onclick="retryStream()">↺ Try again</button>
+        </div>
+
+        <div class="controls" id="controls">
+          <button class="ctrl-btn" id="btnPlay" onclick="togglePlay()" title="Play/Pause (Space)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button class="ctrl-btn" onclick="toggleMute()" title="Mute (M)">
+            <svg viewBox="0 0 24 24" fill="currentColor" id="muteIcon">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+            </svg>
+          </button>
+          <div class="vol-wrap">
+            <input type="range" class="vol-slider" id="volSlider" min="0" max="1" step="0.05" value="0.3" oninput="setVolume(this.value)">
+          </div>
+          <div class="prog-wrap" id="progWrap">
+            <div class="prog-bar" id="progBar">
+              <div class="prog-buf" id="progBuf"></div>
+              <div class="prog-fill" id="progFill"></div>
+            </div>
+            <div class="time-label" id="timeLabel">LIVE</div>
+          </div>
+          <span class="res-badge" id="resBadge">4K</span>
+          <div class="speed-wrap" id="speedWrap">
+            <button class="speed-btn" id="speedBtn" title="Playback Speed (S)">1×</button>
+            <div class="speed-popup" id="speedPopup">
+              <div class="speed-popup-title">Speed</div>
+              <div class="speed-opt" data-sp="0.25">0.25×</div>
+              <div class="speed-opt" data-sp="0.5">0.5×</div>
+              <div class="speed-opt" data-sp="0.75">0.75×</div>
+              <div class="speed-opt active" data-sp="1">Normal</div>
+              <div class="speed-opt" data-sp="1.25">1.25×</div>
+              <div class="speed-opt" data-sp="1.5">1.5×</div>
+              <div class="speed-opt" data-sp="2">2×</div>
+            </div>
+          </div>
+          <select class="q-sel" id="qualSel" title="Quality">
+            <option value="-1">Auto</option>
+          </select>
+          <div class="fit-wrap" id="fitWrap">
+            <button class="fit-btn" title="Video fit (1/2/3)">⊞ FIT</button>
+            <div class="fit-popup" id="fitPopup">
+              <div class="fit-opt active" data-fit="contain">📐 Fit</div>
+              <div class="fit-opt" data-fit="cover">✂️ Crop</div>
+              <div class="fit-opt" data-fit="fill">↔️ Stretch</div>
+            </div>
+          </div>
+          <button class="ctrl-btn" id="btnPip" title="PiP (P)" style="display:none">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 7h-8v6h8V7zm2-4H3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H3V5h18v14z"/></svg>
+          </button>
+          <button class="ctrl-btn" id="btnFs" onclick="toggleFullscreen()" title="Fullscreen (F)">
+            <svg viewBox="0 0 24 24" fill="currentColor" id="fsIcon">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
+
+    <div class="info-bar">
+      <div class="now-logo" id="nowLogo">📺</div>
+      <div class="now-info">
+        <h2 id="nowName">Select a channel</h2>
+        <p id="nowCat">Xtra TV — Live Streaming</p>
+      </div>
+      <div class="live-pill" id="livePill"><div class="lpd"></div> LIVE</div>
+      <div class="nav-btns">
+        <button class="nav-btn" id="btnPrev" title="Previous (←)">⏮ Prev</button>
+        <button class="nav-btn" id="btnNext" title="Next (→)">Next ⏭</button>
+      </div>
+    </div>
+
+    <div class="grid-section">
+      <div class="grid-header">
+        <div class="grid-title" id="gridTitle">All Channels</div>
+        <div class="grid-count" id="gridCount"></div>
+      </div>
+      <div class="ch-grid" id="channelGrid"></div>
+    </div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sb-search">
+      <input type="search" class="search-box" id="searchInput" placeholder="🔍 Search channels…" autocomplete="off" autocorrect="off" autocapitalize="off">
+    </div>
+    <div class="group-list" id="groupList">
+      <div style="padding:6px;width:100%">
+        <div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
