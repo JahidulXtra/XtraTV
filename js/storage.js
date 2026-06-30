@@ -5,8 +5,8 @@
 // for the expected schema (flat array of {name, category, logo, url}).
 const JSON_URL = 'https://cdn.jsdelivr.net/gh/bugsfreeweb/LiveTVCollector@main/LiveTV/Bangladesh/LiveTV.json';
 // const JSON_URL = 'data/channels.json';
-const CACHE_KEY = 'xtra_tv_channels_v3';
-const CACHE_TS_KEY = 'xtra_tv_cache_ts_v3';
+const CACHE_KEY = 'xtra_tv_channels';
+const CACHE_TS_KEY = 'xtra_tv_cache_ts';
 const CACHE_TTL = 10 * 60 * 1000;
 const VOL_KEY = 'xtra_tv_volume';
 const LAST_CH_KEY = 'xtra_tv_last_channel';
