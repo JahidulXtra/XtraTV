@@ -1,0 +1,3 @@
+/* ===== CSS Variables & Base Reset ===== */
+
+:root{--bg:#08080e;--surface:#0f0f18;--card:#16161f;--border:#22222f;--accent:#7c3aed;--accent2:#a855f7;--text:#eeeef5;--muted:#7070a0;--live:#22c55e;--sw:280px;color-scheme:dark}
