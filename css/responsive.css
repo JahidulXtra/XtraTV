@@ -1,14 +1,23 @@
-/* ===== Responsive / Media Query Styles ===== */
+/* ==========================================================================
+   Xtra TV — Responsive Overrides
+   Breakpoints go from largest to smallest, with a couple of accessibility
+   and pixel-density queries mixed in. Mobile layout (<=700px) is the big
+   one — it reflows the whole app from sidebar-on-the-right to a bottom
+   tab bar with a stacked player/grid layout.
+   ========================================================================== */
 
+/* Respect OS-level "reduce motion" setting: kill all animations/transitions app-wide */
 @media(prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
 }
 
+/* Tablet: hide button text labels in the header to save space, keep icons only */
 @media(max-width:900px){
   .cb-text{display:none}
   .hdr-btn{padding:5px 8px}
 }
 
+/* Mobile: swap header/sidebar buttons from desktop style to icon-only mobile buttons */
 @media(max-width:700px){
   .mob-hide{display:none !important}
   .mob-only{display:flex !important}
@@ -19,11 +28,13 @@
   .mob-icon-btn:hover svg{transform:scale(1.14);filter:drop-shadow(0 0 3px rgba(168,85,247,.5))}
 }
 
+/* Mobile: use the dedicated mobile search button instead of the desktop search box */
 @media(max-width:700px){
   .mob-search-btn{display:flex}
   .icon-btn{display:none}
 }
 
+/* Small phones: tighten up modal dialogs (sleep timer, etc.) */
 @media(max-width:480px){
   .modal-box{padding:16px;border-radius:12px}
   .sleep-grid{gap:6px}
@@ -32,6 +43,7 @@
   .modal-hint{font-size:9px}
 }
 
+/* Mobile: shrink the loading overlay (spinner/orbit rings/progress bar) to fit a smaller player */
 @media(max-width:700px){
   .ov-load{gap:6px;padding:8px 12px}
   .load-orbit-system{width:52px;height:52px;margin-bottom:8px}
@@ -46,6 +58,7 @@
   .load-credit{font-size:7px;margin-top:4px}
 }
 
+/* Mobile: shrink the error overlay to match */
 @media(max-width:700px){
   .overlay{gap:6px;padding:10px 14px}
   .ov-err{justify-content:center}
@@ -58,10 +71,17 @@
   .report-btn{padding:7px 10px;font-size:10.5px;border-radius:8px}
 }
 
+/* Mobile: lift the toast above the bottom tab bar (sidebar) so it doesn't overlap */
 @media(max-width:700px){
   .toast{bottom:calc(70px + env(safe-area-inset-bottom))}
 }
 
+/* ==========================================================================
+   Mobile layout (<=700px) — the big one.
+   Desktop is: header + (player/grid on the left, sidebar list on the right).
+   Mobile becomes: header, player on top, grid below it, and the sidebar
+   turns into a horizontally-scrolling bottom tab bar (order:2, fixed height).
+   ========================================================================== */
 @media(max-width:700px){
   .root{height:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
   .body-wrap{flex:1;flex-direction:column;overflow:hidden;min-height:0;display:flex;overflow-x:clip}
@@ -80,8 +100,11 @@
   .grid-logo{width:32px;height:32px;font-size:14px}
   .grid-name{font-size:8.5px}
   .grid-header{margin-bottom:5px}
+
+  /* Sidebar becomes a fixed-height, horizontally-scrolling bottom tab bar (category chips) */
   .sidebar{order:2;width:100% !important;flex-shrink:0;border-left:none;border-top:1px solid rgba(255,255,255,.09);height:calc(64px + env(safe-area-inset-bottom));min-height:calc(64px + env(safe-area-inset-bottom));max-height:calc(64px + env(safe-area-inset-bottom));display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom);background:rgba(15,15,24,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);position:relative;z-index:10}
   .sb-search{display:none}
+  /* horizontal scroll-snap chip row; scrollbar hidden, edges faded with a mask gradient */
   .group-list{flex:1;display:flex;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:5px 10px;gap:5px;-webkit-overflow-scrolling:touch;scrollbar-width:none;align-items:center;overscroll-behavior-x:contain;touch-action:pan-x;will-change:scroll-position;background:var(--surface);scroll-snap-type:x proximity;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
   .group-list::-webkit-scrollbar{display:none}
   .group-item{scroll-snap-align:start;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px 6px;text-align:center;min-width:50px;max-width:68px;flex-shrink:0;margin-bottom:0;border-radius:10px;min-height:50px;touch-action:manipulation;transition:background .18s,transform .15s cubic-bezier(.34,1.4,.64,1)}
@@ -92,6 +115,8 @@
   .group-name{font-size:8px !important;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
   .group-badge{display:none}
   .group-icon{width:26px;height:26px;font-size:13px;flex-shrink:0;transition:background .15s,border-color .15s}
+
+  /* Player controls: hidden by default on mobile, fade in on tap/pause (see .show-ctrl / .paused toggles in player.js) */
   .controls{padding:20px 8px 8px !important;gap:4px !important;opacity:0;transition:opacity .28s cubic-bezier(.4,0,.2,1) !important}
   .player-wrapper.show-ctrl .controls,.player-wrapper.paused .controls{opacity:1 !important}
   .ctrl-btn{min-width:38px;min-height:38px;padding:7px}
@@ -103,6 +128,7 @@
   .vol-wrap{display:flex}
   .vol-slider{width:50px;height:5px}
   .vol-slider::-webkit-slider-thumb{width:14px;height:14px}
+  /* Speed/fit/quality/theater controls dropped on mobile to save space — still reachable via keyboard shortcuts on devices with a keyboard */
   .speed-wrap,.fit-wrap,.quality-wrap,.theater-btn{display:none !important}
   .prog-wrap{min-width:0;flex:1}
   .hdr-count,.nav-btns{display:none}
@@ -110,12 +136,14 @@
   .sleep-indicator{font-size:9px;padding:2px 6px;max-width:82px}
 }
 
+/* Tablet range: sidebar narrows, player caps its height, grid columns shrink slightly */
 @media(min-width:701px) and (max-width:1024px){
   :root{--sw:220px}
   .player-wrapper{max-height:52vh}
   .ch-grid{grid-template-columns:repeat(auto-fill,minmax(68px,1fr))}
 }
 
+/* Small phones: hide the header logo text, shrink header/sidebar/controls further */
 @media(max-width:380px){
   header{padding:0 8px !important;gap:4px !important;height:40px !important}
   .logo-text{display:none}
@@ -128,22 +156,26 @@
   .group-item{min-width:44px;padding:3px 5px;min-height:46px}
   .group-name{font-size:7px !important}
   .ctrl-btn{min-width:34px;min-height:34px;padding:5px}
-  .vol-wrap{display:none !important}
+  .vol-wrap{display:none !important} /* volume slider dropped entirely at this width — use hardware buttons / mute toggle */
 }
 
+/* Very small phones: one more notch down for the logo mark and grid columns */
 @media(max-width:320px){
   .logo-mark{width:24px;height:24px;font-size:12px}
   .ch-grid{grid-template-columns:repeat(auto-fill,minmax(52px,1fr))}
 }
 
+/* Prevent iOS auto-zoom-on-focus by keeping input font-size >= 12px above this width */
 @media(min-width:600px){
   .search-box,.modal-box input{font-size:12px}
 }
 
+/* Retina/high-DPI screens: use a hairline (0.5px) card border instead of a full 1px so it doesn't look thick */
 @media(min-resolution:2dppx){
   .grid-ch{border-width:.5px}
 }
 
+/* Reduced motion: also explicitly stop looping spinner/orbit animations and card hover-lift that the blanket rule above might not fully cover */
 @media(prefers-reduced-motion:reduce){
   .load-ring-outer,.load-ring-inner,.load-dot-track,.splash-orbit-ring1,.splash-orbit-ring2{animation:none !important}
   .grid-ch:hover{transform:none !important}

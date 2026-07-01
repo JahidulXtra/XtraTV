@@ -1,11 +1,17 @@
-// ─── Sort ───
+// Restore the user's saved sort preference (default / A-Z / Z-A).
 let _sortMode='default';
 try{const s=localStorage.getItem(SORT_KEY);if(s&&['default','az','za'].includes(s))_sortMode=s;}catch(e){}
 
-
-// ─── Render ───
+// Full refresh: recompute which channels match the current
+// category/search/sort, then redraw both the sidebar category list and
+// the channel grid. Call this after anything that can change *which*
+// channels are visible (search, category switch, sort change, channel
+// list reload).
 function renderAll(scrollSidebar=false){computeFiltered();_lastGroupRenderKey='';renderGroupList(scrollSidebar);renderGrid();}
 
+// Small cache so building the "is this channel in history" Set only
+// happens when the history array actually changed length, instead of on
+// every computeFiltered() call.
 let _histUidSet=new Set(), _histCacheLen=-1;
 function _getHistUidSet(){
   if(_history.length!==_histCacheLen){
@@ -15,13 +21,17 @@ function _getHistUidSet(){
   return _histUidSet;
 }
 
+// Recomputes `filtered_` (the channel list actually shown in the grid)
+// from the current search query + selected category, and also tallies up
+// per-category / favorites / history counts for the sidebar badges — all
+// in a single pass over `channels` so filtering and counting share the
+// same loop instead of scanning the list twice.
 function computeFiltered(){
   const histUidSet=_getHistUidSet();
   const counts={all:0,__favs__:0,__history__:0};
   const catCounts={};
   filtered_=[];
-  // Cache lowercase search to avoid repeated calls in hot loop
-  const q=searchQ; // already lowercase
+  const q=searchQ;
   const isSpecialCat=currentCat==='all'||currentCat==='__favs__'||currentCat==='__history__';
   const currentCatLow=isSpecialCat?'':currentCat.toLowerCase();
   const searchSrc=q
@@ -43,6 +53,8 @@ function computeFiltered(){
     if(cOk) filtered_.push(ch);
   }
 
+  // History has its own implicit order (most recently watched first) —
+  // only apply the A-Z/Z-A sort mode when *not* viewing History.
   if(currentCat==='__history__'&&!searchQ){
     const histIdx=new Map(_history.map((h,i)=>[h.uid,i]));
     filtered_.sort((a,b)=>(histIdx.get(a.uid)??999)-(histIdx.get(b.uid)??999));
@@ -50,7 +62,10 @@ function computeFiltered(){
     if(_sortMode==='az') filtered_.sort((a,b)=>a._nameLow<b._nameLow?-1:a._nameLow>b._nameLow?1:0);
     else if(_sortMode==='za') filtered_.sort((a,b)=>b._nameLow<a._nameLow?-1:b._nameLow>a._nameLow?1:0);
   }
-  // Fallback: if search returns nothing in current cat, show all matches
+  // If a search inside a specific category comes up empty, fall back to
+  // showing matching results from *all* categories instead of a dead end
+  // ("no channels found") — e.g. searching "bbc" while on the Sports tab
+  // should still surface BBC News rather than nothing.
   if(!filtered_.length&&currentCat!=='all'&&searchQ){
     const fallback=searchSrc.slice();
     if(fallback.length){filtered_=fallback;currentCat='all';_lastGroupRenderKey='';}
@@ -59,37 +74,42 @@ function computeFiltered(){
   $gridTitle.textContent=catLabel;
   $gridCount.textContent=filtered_.length+(filtered_.length===1?' Channel':' Channels');
   if($clearHistoryBtn) $clearHistoryBtn.style.display=(currentCat==='__history__'&&_history.length>0)?'inline-block':'none';
-  // Store merged counts for renderGroupList
   _lastCounts={...counts,...catCounts};
 }
 
+// Counts are computed as a side-effect of computeFiltered() and stashed
+// in _lastCounts; this just exposes them to renderGroupList() below.
 let _lastCounts={all:0,__favs__:0,__history__:0};
 
 function buildCounts(){
   return _lastCounts;
 }
 
+// Renders the sidebar category list (All / Favourites / History / each
+// category, with counts). To avoid rebuilding the whole list on every
+// keystroke/tick, it first builds a "fingerprint" key (fKey) from
+// everything that could change what's shown (active category, favorites,
+// history length, search text, category set, sort mode). If nothing in
+// that fingerprint changed since last time, it just patches the active
+// state + badge counts of the existing DOM elements in place; only when
+// something structural changed does it actually tear down and rebuild.
 let _lastGroupRenderKey='';
 function renderGroupList(scrollToActive=false){
   const cats=[...new Set(channels.map(c=>c.category).filter(Boolean))].sort();
   const counts=buildCounts();
 
-  // Build a compact key to detect if re-render is actually needed
-  // Use sorted fav UIDs so toggle is correctly detected
   const favsKey=_favs.size>0?[..._favs].sort().join(','):'∅';
   const fKey=`${currentCat}|${favsKey}|${_history.length}|${searchQ}|${cats.join(',')}|${_sortMode}`;
   const needsRebuild=fKey!==_lastGroupRenderKey;
   _lastGroupRenderKey=fKey;
 
   if(!needsRebuild&&$groupList.children.length>0){
-    // Just update active state without rebuilding
     $groupList.querySelectorAll('.group-item').forEach(el=>{
       const cat=el.dataset.cat;
       const isActive=currentCat===cat;
       if(isActive!==el.classList.contains('active')){
         el.classList.toggle('active',isActive);
       }
-      // Update badge counts
       const badge=el.querySelector('.group-badge');
       if(badge){
         const c=cat==='all'?counts.all:cat==='__favs__'?counts.__favs__:cat==='__history__'?counts.__history__:(counts[cat]||0);
@@ -124,7 +144,6 @@ function renderGroupList(scrollToActive=false){
   const prevScrollLeft=$groupList.scrollLeft;
   const prevScrollTop=$groupList.scrollTop;
   $groupList.innerHTML=''; $groupList.appendChild(frag);
-  // Defer scroll restore so browser has time to lay out new content
   requestAnimationFrame(()=>{
     $groupList.scrollLeft=prevScrollLeft;
     $groupList.scrollTop=prevScrollTop;
@@ -135,6 +154,8 @@ function renderGroupList(scrollToActive=false){
   });
 }
 
+// Switches the active sidebar category (or a no-op tap animation if it's
+// already selected) and re-filters/re-renders the grid accordingly.
 function filterCat(c,srcEl){
   if(srcEl){
     srcEl.style.animation='none';
@@ -145,7 +166,10 @@ function filterCat(c,srcEl){
   currentCat=c;computeFiltered();renderGroupList(true);renderGrid();
 }
 
-// ─── Sort dropdown popup ───
+// Wires up the "Sort" button + its popup (Default / A→Z / Z→A). Kept in
+// an IIFE since none of this needs to be called from outside the file,
+// except window._closeSortPopup which other popups (speed/fit/quality)
+// call so opening one popup closes any other open one.
 (()=>{
   const btn=document.getElementById('sortBtn');
   const popup=document.getElementById('sortPopup');
@@ -164,7 +188,6 @@ function filterCat(c,srcEl){
   function openPopup(){
     popup.classList.add('open');
     btn.classList.add('popup-open');
-    // Close other popups
     speedPopup.classList.remove('open');
     fitPopup.classList.remove('open');
     if(window._closeQualityPopup) window._closeQualityPopup();
@@ -197,4 +220,3 @@ function filterCat(c,srcEl){
 
   window._closeSortPopup=closePopup;
 })();
-

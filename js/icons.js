@@ -1,14 +1,15 @@
-/* ===== SVG Icon library (replaces emoji) ===== */
-// ─── Icon library (inline SVG replacing emoji) ───
-// Lightweight line-icon set so artwork renders identically on every device/OS
-// instead of relying on the platform's own (inconsistent, heavier) emoji font.
+// Central icon library: every SVG the app uses, keyed by name. Referenced
+// throughout the JS (ICONS.tv, ICONS.starFilled, etc.) and by getGroupIcon()
+// below. Exposed on window so it's also reachable from inline HTML
+// (e.g. onerror="...window.ICONS.tv...") and from other script files
+// regardless of load order quirks.
 const ICONS = {
-  tv:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></svg>',
+  tv:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-tv"></use></svg>',
   search:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
-  link:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7H13v2h4c1.65 0 3 1.35 3 3s-1.35 3-3 3h-4v2h4c2.76 0 5-2.24 5-5s-2.24-5-5-5zm-6 8H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-2zm-3-4h8v2H8z"/></svg>',
-  clock:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 9 9 9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 2a7 7 0 0 1 7 7 7 7 0 0 1-7 7 7 7 0 0 1-7-7 7 7 0 0 1 7-7zm-1 2v6l5 3-.75-1.23L13 13.5V7h-2z"/></svg>',
-  trash:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
-  keyboard:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><path d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 5H5v-2h2v2zm9 0H8v-2h8v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2zm3 6h-2v-2h2v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>',
+  link:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-link"></use></svg>',
+  clock:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-clock"></use></svg>',
+  trash:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-trash"></use></svg>',
+  keyboard:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-keyboard"></use></svg>',
   music:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
   alert:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12" y2="17.01"/></svg>',
   wifiOff:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12" y2="20"/></svg>',
@@ -16,8 +17,8 @@ const ICONS = {
   file:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
   wrench:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg>',
   clipboard:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
-  check:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
-  close:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  check:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-check"></use></svg>',
+  close:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-close"></use></svg>',
   moon:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
   refresh:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>',
   theater:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor"><path d="M19 7H5c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm0 10H5V9h14v8z"/></svg>',
@@ -52,15 +53,25 @@ const ICONS = {
   crop:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg>',
   stretch:'<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 3 12 8 17"/><polyline points="16 7 21 12 16 17"/></svg>'
 };
-window.ICONS=ICONS; // accessible from inline onerror="" attributes
+window.ICONS=ICONS;
+// Convenience wrapper: wraps a named icon in a <span class="ic"> for
+// consistent sizing/alignment wherever it's inserted via innerHTML.
 function ic(name,extra){return '<span class="ic'+(extra?' '+extra:'')+'" aria-hidden="true">'+(ICONS[name]||ICONS.tv)+'</span>';}
 
+// Picks a sidebar icon for a channel category by loosely matching keywords
+// against the category name (e.g. category "Bangla News" contains "news"
+// -> ICONS.news), since the remote channel list's category names aren't
+// standardized and won't match these keys exactly. Falls back to a
+// generic satellite icon for anything unrecognized.
 const GROUP_ICONS = {
   'news':ICONS.news,'sports':ICONS.sports,'entertainment':ICONS.film,
   'music':ICONS.music,'kids':ICONS.smile,'movies':ICONS.film,'religious':ICONS.worship,'islamic':ICONS.worship,
   'documentary':ICONS.camera,'business':ICONS.briefcase,'tech':ICONS.cpu,'lifestyle':ICONS.leaf,
   'default':ICONS.satellite
 };
+// Precomputed as an array (once) so getGroupIcon() below can loop over
+// keyword/icon pairs directly instead of re-deriving them from
+// GROUP_ICONS (and its 'default' entry) on every call.
 const _GROUP_ICON_ENTRIES=Object.entries(GROUP_ICONS).filter(([k])=>k!=='default');
 function getGroupIcon(n){
   if(!n) return GROUP_ICONS.default;
@@ -68,4 +79,3 @@ function getGroupIcon(n){
   for(const [k,v] of _GROUP_ICON_ENTRIES) if(l.includes(k)) return v;
   return GROUP_ICONS.default;
 }
-
