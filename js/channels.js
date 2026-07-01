@@ -1,5 +1,9 @@
-/* ===== Load & Render Channels (fetch/cache, grid building) — loads AFTER player.js ===== */
-// ─── JSON fetch & cache ───
+// Normalizes the remote/local channel JSON into a flat array of
+// { name, url, category, logo } objects. Accepts two shapes:
+//  1) { channels: { "News": [...], "Sports": [...] } }  -> category = object key
+//  2) a flat array (or { channels: [...] })              -> category = per-item field
+// Also accepts alternate key names (title/stream/link/group/cat/image/icon)
+// so slightly different community JSON formats still work.
 function parseJSON(data){
   try{
     if(data.channels&&!Array.isArray(data.channels)&&typeof data.channels==='object'){
@@ -20,12 +24,21 @@ function parseJSON(data){
   }catch(e){console.warn('[XtraTV] parseJSON error',e);return[];}
 }
 
+// Generates a short, stable id for a channel from its name+category+url
+// (djb2 string hash). Same channel data always produces the same id, so
+// favorites/history/"last watched" can reliably match a channel across
+// separate fetches/page reloads, even without a real backend id.
 function _uid(name,category,url){
   const s=name+'|'+category+'|'+url;
   let h=5381;
   for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0;
   return 'u'+h.toString(36);
 }
+// Turns the raw parsed entries into the final channel objects used by the
+// rest of the app: drops entries missing a name/url, attaches a stable id
+// (see _uid), obfuscates the stream url (see js/utils.js _enc), and
+// pre-computes lowercase name/category strings so search doesn't have to
+// call .toLowerCase() on every keystroke.
 function processChannels(raw){
   return raw.filter(c=>c.url&&c.name).map(c=>{
     const uid=_uid(c.name,c.category,c.url);
@@ -39,6 +52,12 @@ function processChannels(raw){
   });
 }
 
+// Called once a channel list (fresh or cached) is ready to be used.
+// Updates the header count, renders the sidebar/grid, dismisses the splash
+// screen, and — if the user had a channel playing on a previous visit —
+// auto-restores it. _lastRestoreKey/_restorePending guard against trying
+// to restore the same channel twice (e.g. cache load followed by a
+// background refresh calling this again).
 let _lastRestoreKey='', _restorePending=false;
 function applyChannels(chs){
   if(!chs||!chs.length) return false;
@@ -49,7 +68,6 @@ function applyChannels(chs){
   requestAnimationFrame(()=>$hdrCount.classList.add('updated'));
   if(document.pictureInPictureEnabled) document.getElementById('btnPip').style.display='flex';
   renderAll();
-  // Dismiss page splash screen
   window._splashReady=true;
   if(typeof window._splashDismiss==='function') window._splashDismiss(channels.length+' channels loaded');
   else if(typeof window._splashTryDismiss==='function') window._splashTryDismiss();
@@ -72,6 +90,8 @@ function applyChannels(chs){
   return true;
 }
 
+// Renders placeholder "skeleton" cards in the channel grid while the real
+// list is loading, so the layout doesn't jump once channels arrive.
 function showGridSkeleton(count){
   const frag=document.createDocumentFragment();
   for(let i=0;i<count;i++){
@@ -87,6 +107,10 @@ function showGridSkeleton(count){
   $gridTitle.textContent='Loading…'; $gridCount.textContent='';
 }
 
+// Main entry point for loading channels (called once on app start).
+// Cache-first: if a cached list exists and is still within CACHE_TTL,
+// show it instantly and quietly re-validate in the background
+// (_bgRefresh). Otherwise show skeletons and fetch from JSON_URL directly.
 async function fetchChannels(){
   try{
     const cached=localStorage.getItem(CACHE_KEY);
@@ -101,11 +125,15 @@ async function fetchChannels(){
   await _fetchAndRender(true);
 }
 
+// Silent "stale-while-revalidate" refresh: re-fetches the channel list in
+// the background without showing loading UI or errors. If the cache is
+// still fresh it does nothing. Any in-flight previous refresh is aborted
+// first so overlapping calls can't race each other.
 let _bgRefreshAbort=null;
 async function _bgRefresh(){
   try{
     const ts=parseInt(localStorage.getItem(CACHE_TS_KEY)||'0',10);
-    if(ts&&(Date.now()-ts)<CACHE_TTL) return; // respect same TTL as cache
+    if(ts&&(Date.now()-ts)<CACHE_TTL) return;
   }catch(e){}
   if(_bgRefreshAbort){try{_bgRefreshAbort.abort();}catch(e){}}
   _bgRefreshAbort=new AbortController();
@@ -134,6 +162,10 @@ async function _bgRefresh(){
   }
 }
 
+// Does the actual network fetch + parse + cache-write for the channel
+// list, and (when showError is true) renders a friendly error state in
+// the sidebar/grid with a specific message per failure type (offline,
+// 404, HTML instead of JSON, invalid JSON, empty list, etc).
 let _fetchAbort=null;
 async function _fetchAndRender(showError){
   if(_fetchAbort){try{_fetchAbort.abort();}catch(e){}}
@@ -174,15 +206,16 @@ async function _fetchAndRender(showError){
   }
 }
 
-
-
+// Builds (and memoizes per channel id) the <img> markup for a channel
+// logo. Uses data-src instead of src so the image only actually loads
+// once it scrolls into view (see getImgObserver/observeLazyImages below).
+// Falls back to the generic TV icon if there's no logo or it fails to load.
 const _logoCache=new Map();
 const LOGO_CACHE_MAX=500;
 function logoHTML(ch,size){
   if(!ch.logo) return ICONS.tv;
   let html=_logoCache.get(ch.id);
   if(!html){
-    // onerror: hide broken img and show SVG fallback icon in parent
     html=`<img data-src="${xe(ch.logo)}" class="lazy" width="${size}" height="${size}" decoding="async" alt="" loading="lazy" fetchpriority="low" onerror="this.onerror=null;this.style.display='none';this.parentNode.innerHTML=window.ICONS.tv;">`;
     if(_logoCache.size>=LOGO_CACHE_MAX){_logoCache.delete(_logoCache.keys().next().value);}
     _logoCache.set(ch.id,html);
@@ -190,6 +223,9 @@ function logoHTML(ch,size){
   return html;
 }
 
+// Lazy-image-loading: a single shared IntersectionObserver that swaps
+// data-src -> src once a logo <img> scrolls within 300px of the viewport,
+// instead of loading every channel logo up front.
 let _imgObserver=null;
 function getImgObserver(){
   if(_imgObserver) return _imgObserver;
@@ -209,9 +245,13 @@ function getImgObserver(){
       }
       _imgObserver.unobserve(img);
     }
-  },{rootMargin:'300px 0px',threshold:0}); // wider vertical rootMargin for smoother preload
+  },{rootMargin:'300px 0px',threshold:0});
   return _imgObserver;
 }
+// Hooks up the lazy-load observer to every not-yet-loaded logo <img>
+// inside a given container. If an image happens to already be cached by
+// the browser (img.complete), it's shown immediately instead of waiting
+// for an intersection event.
 function observeLazyImages(container){
   const obs=getImgObserver();
   container.querySelectorAll('img.lazy[data-src]').forEach(img=>{
@@ -223,7 +263,15 @@ function observeLazyImages(container){
   });
 }
 
-const RENDER_CHUNK=80; // larger first batch → fewer frames to feel complete
+// Renders the channel grid in two phases so a large channel list never
+// blocks/freezes the UI:
+//  1) the first RENDER_CHUNK cards are built and inserted immediately.
+//  2) the rest are built in small batches during browser idle time
+//     (requestIdleCallback, with a setTimeout fallback for Safari).
+// _renderGen is bumped on every call so an in-progress background batch
+// from a previous render (e.g. user switched category mid-render) detects
+// it's stale and stops instead of appending to the wrong grid.
+const RENDER_CHUNK=80;
 let _renderGen=0;
 function renderGrid(){
   gridElMap.clear();
@@ -254,7 +302,7 @@ function renderGrid(){
       while(i<rest.length&&(processed===0||processed<IDLE_CHUNK&&(deadline?deadline.timeRemaining()>1:true))){
         if(gen!==_renderGen) return;
         const ch=rest[i++]; processed++;
-        const el=_makeChannelCard(ch,false,null); // no animation for idle-loaded cards
+        const el=_makeChannelCard(ch,false,null);
         gridElMap.set(ch.id,el);
         chunkFrag.appendChild(el);
         chunkEls.push(el);
@@ -276,24 +324,25 @@ function renderGrid(){
     else setTimeout(()=>renderChunk(null),16);
   }
 }
+// Builds one channel card DOM element (logo + name + favorite star).
+// `animate` staggers the entrance animation using the --i CSS variable,
+// only used for the first visible batch so later idle-time batches don't
+// pointlessly animate off-screen.
 function _makeChannelCard(ch,animate,idx){
   const el=document.createElement('div');
   el.className='grid-ch'+(animate?' card-animate':'')+(currentChannel&&currentChannel.id===ch.id?' active':'');
   if(animate&&idx!=null) el.style.setProperty('--i',Math.min(idx,15));
   el.dataset.id=ch.id;
-  // Logo wrapper
   const logoDiv=document.createElement('div');
   logoDiv.className='grid-logo';
-  logoDiv.innerHTML=logoHTML(ch,34); // logoHTML returns cached img string
+  logoDiv.innerHTML=logoHTML(ch,34);
   el.appendChild(logoDiv);
-  // Fav star
   if(isFav(ch.uid)){
     const star=document.createElement('div');
     star.className='grid-fav-star';
     star.innerHTML=ICONS.starFilled;
     el.appendChild(star);
   }
-  // Name
   const nameDiv=document.createElement('div');
   nameDiv.className='grid-name';
   nameDiv.textContent=ch.name||'';
@@ -303,7 +352,9 @@ function _makeChannelCard(ch,animate,idx){
 }
 
 function _chFromCardEl(el){if(!el||!el.dataset.id)return null;return channelsById.get(el.dataset.id)||null;}
+// Click a card -> play that channel.
 $channelGrid.addEventListener('click',e=>{const card=e.target.closest('.grid-ch');if(card)pickChannel(card.dataset.id);});
+// Right-click (desktop) -> toggle favorite.
 $channelGrid.addEventListener('contextmenu',e=>{
   const card=e.target.closest('.grid-ch');
   if(!card) return;
@@ -312,6 +363,10 @@ $channelGrid.addEventListener('contextmenu',e=>{
   const ch=_chFromCardEl(card);
   if(ch) toggleFav(ch);
 });
+// Mobile equivalent of right-click: a ~600ms long-press on a card toggles
+// favorite. _lpFired flags a completed long-press so the following
+// touchend doesn't also fire a click/play, and touchmove cancels the
+// long-press if the user is scrolling instead of holding still.
 $channelGrid.addEventListener('touchstart',e=>{
   const card=e.target.closest('.grid-ch');
   if(!card) return;
@@ -332,22 +387,30 @@ $channelGrid.addEventListener('touchmove',e=>{
   card._lpFired=false;
 },{passive:true});
 
+// Moves the "active" (currently playing) highlight from one grid card to
+// another without re-rendering the whole grid, and scrolls the newly
+// active card into view.
 function updateActiveHighlight(prevId,newId){
   if(prevId){const o=gridElMap.get(prevId)||$channelGrid.querySelector('[data-id="'+prevId+'"]');if(o)o.classList.remove('active');}
   if(newId){const n=gridElMap.get(newId)||$channelGrid.querySelector('[data-id="'+newId+'"]');if(n){n.classList.add('active');requestAnimationFrame(()=>n.scrollIntoView({block:'nearest',behavior:'smooth'}));}}
 }
 
 function pickChannel(id){playChannel(id);}
+// Switches playback to the channel with the given id (used by grid clicks,
+// history, favorites, prev/next, and "last watched" restore).
+// If it's already the channel on screen and not in an error/loading state,
+// this just resumes/toggles playback instead of reloading the stream.
 function playChannel(id){
   const ch=channelsById.get(id);
   if(!ch) return;
   if(currentChannel&&currentChannel.id===ch.id&&!$ovErr.classList.contains('show')&&!$ovLoad.classList.contains('show')){
-    // Same channel: if paused by user, resume; otherwise do nothing
     if(video.paused&&!_userPaused){safePlay();setPlayIcon(true);pw.classList.remove('paused');}
     else if(video.paused&&_userPaused){togglePlay();}
     return;
   }
   const prevId=currentChannel?currentChannel.id:null;
+  // Swap in the new channel's state, reset per-stream UI (speed, retry
+  // count, any pending auto-retry/ended timers) before loading it.
   currentChannel=ch; currentEnc=ch.enc;
   _isDirectPlay=false; retryCount=0; clearAuto(); _userPaused=false; clearTimeout(_endedTimer); _endedTimer=null;
   resetSpeed();
@@ -376,9 +439,9 @@ function playChannel(id){
   $nowCat.textContent=ch.category||'Live TV';
   updateActiveHighlight(prevId,ch.id);
   _updateFavBtn();
+  // Stream URL is stored obfuscated (see js/utils.js _enc/_dec) — decode it
+  // right before actually handing it to the player.
   const url=_decCached(ch.enc);
   if(!url){showErr(true,'Invalid stream URL.','Bad URL');return;}
   loadStream(url,ch.name);
 }
-
-// Cache loading center logo element

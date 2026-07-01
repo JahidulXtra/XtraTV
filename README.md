@@ -90,15 +90,14 @@ The parser (`parseJSON` in `js/channels.js`) is forgiving — it also accepts
 and an object-of-arrays shape (`{ "channels": { "News": [...], "Sports": [...] } }`)
 instead of a flat array.
 
-To switch the active source, edit `js/storage.js`:
+To switch the active source, open `js/storage.js` and replace the `JSON_URL`
+line with one of these:
 
 ```js
-// Current (active): remote source
+// Remote source (default):
 const JSON_URL = 'https://cdn.jsdelivr.net/gh/bugsfreeweb/LiveTVCollector@main/LiveTV/Bangladesh/LiveTV.json';
-// const JSON_URL = 'data/channels.json';
 
-// To use the local demo file instead, flip the comments:
-// const JSON_URL = 'https://cdn.jsdelivr.net/gh/bugsfreeweb/LiveTVCollector@main/LiveTV/Bangladesh/LiveTV.json';
+// Local demo file instead:
 const JSON_URL = 'data/channels.json';
 ```
 
@@ -151,11 +150,9 @@ xtra-tv/
 ├── data/
 │   └── channels.json      Demo/template channel list (see Configuration)
 └── assets/
-    ├── icons/
-    │   └── favicon.svg    Site favicon (extracted from index.html — was inline data-URI)
-    │                      (note: in-app UI icons are still inline SVG in js/icons.js, unrelated to this file)
-    ├── logos/             Placeholder — logos come from the remote channel JSON
-    └── favicon.ico        Placeholder — legacy fallback for browsers that need .ico (optional)
+    └── icons/
+        └── favicon.svg    Site favicon (extracted from index.html — was inline data-URI)
+                           (note: in-app UI icons are still inline SVG in js/icons.js, unrelated to this file)
 ```
 
 ## Architecture Notes

@@ -1,4 +1,7 @@
-// ─── DOM refs ───
+// --- Cached DOM references -------------------------------------------
+// Player, overlays, progress bar, and header elements are looked up once
+// here and reused everywhere else in this file (and other JS files that
+// load after this one — see README load-order notes).
 const video       = document.getElementById('videoPlayer');
 const pw          = document.getElementById('playerWrapper');
 const $ovEmpty    = document.getElementById('ovEmpty');
@@ -34,6 +37,9 @@ const $toast      = document.getElementById('toast');
 const $groupList  = document.getElementById('groupList');
 const $bufBadge   = document.getElementById('bufBadge');
 const $progBar    = document.getElementById('progBar');
+// Cached mobile/desktop flag (recomputed on resize via rAF, not on every
+// call) — used to branch touch-vs-mouse UI behavior without re-measuring
+// window.innerWidth on every check.
 let _isMobileCache=window.innerWidth<=700;
 const isMobile=()=>_isMobileCache;
 let _resizeRaf=false;
@@ -43,14 +49,16 @@ window.addEventListener('resize',()=>{
   requestAnimationFrame(()=>{_isMobileCache=window.innerWidth<=700;_resizeRaf=false;});
 },{passive:true});
 
-// Restore persisted settings
+// Restore previously saved volume and fit-mode preferences (localStorage)
+// before anything plays, so the player opens with the user's last settings.
 try{ const sv=parseFloat(localStorage.getItem(VOL_KEY)); if(!isNaN(sv)&&sv>=0&&sv<=1) _userVolume=sv; }catch(e){}
 try{ const sf=localStorage.getItem(FIT_KEY); if(sf&&['contain','cover','fill'].includes(sf)){ fitMode=sf; pw.classList.remove('fit-contain','fit-cover','fit-fill'); pw.classList.add('fit-'+sf); } }catch(e){}
 video.volume = _userVolume;
 $volSlider.value = _userVolume;
 $volSlider.style.setProperty('--vol',(_userVolume*100).toFixed(1)+'%');
 
-// ─── Audio bars ───
+// Generates the animated "audio bars" visualizer shown when playing an
+// audio-only stream (random heights/durations so bars don't move in sync).
 (()=>{
   const bars=document.getElementById('audioBars');
   const frag=document.createDocumentFragment();
@@ -62,7 +70,15 @@ $volSlider.style.setProperty('--vol',(_userVolume*100).toFixed(1)+'%');
   bars.appendChild(frag);
 })();
 
-// ─── HLS.js loader (lazy, single load) ───
+// Lazy-loads hls.js from CDN on first use (rather than always, since many
+// visits may only play native-supported formats). Queues callbacks if a
+// load is already in progress so multiple simultaneous callers don't
+// inject the script twice. The integrity attribute is pinned to this exact
+// version's known hash (computed from the published npm package, which
+// cdnjs serves unmodified) so the browser refuses to run the script if the
+// CDN ever serves something other than the expected file — falls into the
+// same onerror path as a network failure. Bump both the URL and this hash
+// together whenever the pinned hls.js version changes.
 let _hlsLoading=false, _hlsQueue=[];
 function ensureHls(cb){
   if(typeof Hls!=='undefined'){cb();return;}
@@ -71,13 +87,19 @@ function ensureHls(cb){
   _hlsLoading=true;
   const s=document.createElement('script');
   s.crossOrigin='anonymous';
+  s.integrity='sha384-z+tuLqMWl1/cPv7O+39RO0EURSNvorimpcCaMgeNwU+qFBx+AlUIl7jaAwg0cYil';
   s.src='https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.6.13/hls.min.js';
   s.onload=()=>{_hlsLoading=false;_hlsQueue.forEach(fn=>fn());_hlsQueue=[];};
   s.onerror=()=>{_hlsLoading=false;_hlsQueue=[];console.warn('HLS.js load failed');};
   document.head.appendChild(s);
 }
 
-// ─── Next channel preload ───
+// --- Next-channel preloading -------------------------------------------
+// While the current channel plays, quietly start loading (but don't play)
+// the *next* channel in the filtered list into a hidden, muted <video> +
+// separate Hls instance, so pressing "next" feels instant. Cancelled/
+// destroyed if the user navigates away, changes channel again, or after
+// 30s (to avoid holding a stale connection open indefinitely).
 let _preloadVideo=null;
 function destroyPreload(){
   clearTimeout(_preloadTimer);
@@ -116,12 +138,14 @@ function preloadNextChannel(){
   },3000);
 }
 
-
-// ─── safePlay ───
+// Starts playback in a way that works around browser autoplay restrictions:
+// always attempt play() *muted* first (muted autoplay is universally
+// allowed), then unmute shortly after if the user hadn't muted themselves.
+// If even muted play() is rejected (NotAllowedError), fall back to staying
+// muted and prompting the user to tap the speaker icon.
 function safePlay(){
   video.volume=_userVolume;
   $volSlider.value=_userVolume;
-  // Start muted to bypass autoplay policy, unmute after successful play
   video.muted=true;
   const cc=currentChannel, ce=currentEnc;
   const p=video.play();
@@ -129,7 +153,6 @@ function safePlay(){
     p.then(()=>{
       setTimeout(()=>{
         if(currentChannel!==cc||currentEnc!==ce) return;
-        // Only unmute if user hasn't explicitly muted
         if(!_muted){
           video.muted=false;
           video.volume=_userVolume; $volSlider.value=_userVolume;
@@ -137,7 +160,6 @@ function safePlay(){
         }
       },200);
     }).catch(err=>{
-      // Only suppress autoplay-policy errors; re-flag anything else
       if(err&&err.name==='NotAllowedError'){
         _muted=true; video.muted=true;
         video.volume=_userVolume; $volSlider.value=_userVolume;
@@ -149,7 +171,6 @@ function safePlay(){
       }
     });
   } else {
-    // play() returned undefined (old browsers) — assume success
     setTimeout(()=>{
       if(currentChannel!==cc||currentEnc!==ce) return;
       if(!_muted){
@@ -161,6 +182,10 @@ function safePlay(){
   }
 }
 
+// Redraws the speaker icon (muted / low / high volume) with a small
+// scale+fade transition. Icon shape depends on both the mute flag and the
+// current slider value, so dragging volume to 0 shows the muted icon even
+// if `_muted` itself is still false.
 function updateMuteIcon(m){
   const svg=document.getElementById('muteIcon');
   const btn=document.getElementById('btnMute');
@@ -171,7 +196,6 @@ function updateMuteIcon(m){
   svg.style.opacity='0';
   setTimeout(()=>{
     if(m){
-      // Muted — speaker with X
       svg.innerHTML=`
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" opacity=".9"/>
         <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -179,15 +203,12 @@ function updateMuteIcon(m){
     } else {
       const vol=parseFloat(document.getElementById('volSlider')?.value??1);
       if(vol===0){
-        // Zero volume — speaker only
         svg.innerHTML=`<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" opacity=".9"/>`;
       } else if(vol<0.5){
-        // Low volume — one arc
         svg.innerHTML=`
           <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" opacity=".9"/>
           <path d="M15.54 8.46a5 5 0 0 1 0 7.07" class="vol-arc vol-arc-inner" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>`;
       } else {
-        // High volume — two arcs
         svg.innerHTML=`
           <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" opacity=".9"/>
           <path d="M19.07 4.93a10 10 0 0 1 0 14.14" class="vol-arc vol-arc-outer" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
@@ -200,24 +221,31 @@ function updateMuteIcon(m){
   },70);
 }
 
+// Fully tears down whatever is currently playing/loading: clears every
+// stream-related timer, destroys the Hls instance (if any) and any
+// preload in progress, detaches the <video> source, and hides the
+// loading/error/audio overlays. Called at the start of every new
+// loadStream/loadStreamDirect so switching channels never leaves stale
+// timers or a leftover Hls instance running in the background.
 function destroyStream(){
   clearTimeout(_stalledTimer);
   clearTimeout(_watchdogTimer);
   clearAuto();
   stopProgressTimer();
-  clearInterval(_loadStatusTimer); _loadStatusTimer=null; // stop any stale load-status cycle
+  clearInterval(_loadStatusTimer); _loadStatusTimer=null;
   destroyPreload();
   const h=hlsObj; hlsObj=null;
   if(h){try{h.destroy();}catch(e){}}
   clearInterval(_autoLiveTimer); _autoLiveTimer=null;
   try{video.pause();video.removeAttribute('src');video.load();}catch(e){}
-  // Reset direct-play state AFTER destroying HLS to keep values for error recovery
-  _isDirectPlay=false; _directPlayUrl=''; _directPlayName=''; _directPlayIsAudio=false;
   $audioOver.classList.remove('show');
   $bufBadge.classList.remove('show');
   showLoad(false); showErr(false);
 }
 
+// Cycles the small status text under the loading spinner ("Connecting to
+// stream…" -> "Fetching manifest…" -> …) purely for perceived-progress
+// feedback — it's not tied to real load stages, just rotates on a timer.
 const _loadStatuses=['Connecting to stream…','Fetching manifest…','Buffering frames…','Almost there…'];
 let _loadStatusTimer=null, _loadStatusIdx=0;
 
@@ -253,6 +281,7 @@ function _stopLoadStatusCycle(success){
   }
 }
 
+// Shows/hides the loading overlay and starts/stops the status-message cycle.
 function showLoad(on,name){
   $ovLoad.classList.toggle('show',!!on);
   const $n=document.getElementById('loadNm');
@@ -264,6 +293,8 @@ function showLoad(on,name){
     _stopLoadStatusCycle(success);
   }
 }
+// Shows/hides the error overlay with a given title/body, or resets it back
+// to the default "Stream unavailable" text when hidden.
 function showErr(on,body,title){
   $ovErr.classList.toggle('show',!!on);
   if(on){
@@ -279,7 +310,6 @@ function showErr(on,body,title){
 
 let _directPlayUrl='', _directPlayName='', _directPlayIsAudio=false;
 
-
 const $loadCenterLogo=document.querySelector('.load-center-logo');
 function _setLoadLogo(logo){
   if(!$loadCenterLogo) return;
@@ -290,6 +320,15 @@ function _setLoadLogo(logo){
   }
 }
 
+// Loads and plays a channel's stream URL. This is the main HLS pipeline:
+//  - hls.js (if supported) for most browsers, tuned with conservative
+//    buffer sizes on mobile to limit memory/bandwidth use.
+//  - native HLS (video.canPlayType) as a fallback for Safari/iOS, which
+//    doesn't need hls.js since it supports HLS out of the box.
+// An 8s watchdog fires an error if neither path reports "ready" in time
+// (e.g. server not responding at all). Recoverable Hls errors (network
+// blips, decode errors) are retried in place; unrecoverable ones show an
+// error and hand off to scheduleAutoRetry() for a countdown-based retry.
 function loadStream(url,name){
   destroyStream();
   _setLoadLogo(currentChannel?.logo||null);
@@ -390,9 +429,11 @@ function loadStream(url,name){
   });
 }
 
-
-// ─── Auto-retry ───
-let _retryGen=0; // incremented on each new stream load to invalidate stale retry ticks
+// Counts down and automatically retries a failed live stream (up to 3
+// attempts), updating the error message each second ("Retrying in Ns…").
+// _retryGen lets clearAuto() invalidate an in-progress countdown so a
+// newer retry/channel-switch can't be stepped on by a stale tick().
+let _retryGen=0;
 function scheduleAutoRetry(){
   if(_isDirectPlay) return;
   clearAuto();
@@ -400,7 +441,7 @@ function scheduleAutoRetry(){
   const gen=++_retryGen;
   let s=7;
   const tick=()=>{
-    if(gen!==_retryGen){return;} // stale — a new stream was loaded
+    if(gen!==_retryGen){return;}
     if(retryCount>=3){$errBody.textContent='Max retries reached.';clearAuto();return;}
     $errBody.textContent=`Retrying in ${s}s… (attempt ${retryCount+1}/3)`;
     if(s<=0){
@@ -414,6 +455,9 @@ function scheduleAutoRetry(){
   tick();
 }
 function clearAuto(){clearTimeout(autoRetryTimer);autoRetryTimer=null;_retryGen++;}
+// Manual retry (the "Retry" button on the error overlay) — resets the
+// retry counter and reloads either the current channel or the last
+// direct/network-stream URL, whichever was playing.
 function retryStream(){
   clearAuto(); retryCount=0;
   if(_isDirectPlay){
@@ -425,7 +469,6 @@ function retryStream(){
     else showErr(true,'Invalid stream URL.','Bad URL');
   }
 }
-// ─── Quality popup (custom, replaces native <select>) ───
 function _fmtBitrate(bps){
   if(!bps||bps<=0) return '';
   const mbps=bps/1e6;
@@ -457,6 +500,11 @@ function resetQualityUI(){
   </div>`;
   $qualityBtnLabel.textContent='Auto';
 }
+// Rebuilds the quality-selector dropdown from an Hls instance's ABR
+// levels: always includes "Auto" at the top, then each level sorted
+// highest-resolution first, labeled with an SD/HD/FHD/2K/4K badge based on
+// height. Levels above 4320p (8K) are skipped as almost certainly bogus
+// manifest data rather than a real stream.
 function buildQualityList(hls,levels){
   if(!levels||!levels.length) return;
   _qualityHls=hls; _qualityLevels=levels;
@@ -465,7 +513,6 @@ function buildQualityList(hls,levels){
   autoOpt.className='quality-opt active'; autoOpt.dataset.level='-1';
   autoOpt.innerHTML=`<span class="ic quality-opt-ic" aria-hidden="true">${ICONS.auto}</span><span class="quality-opt-label">Auto</span><span class="quality-opt-live" id="qualityAutoLive"></span><span class="quality-opt-check ic" aria-hidden="true">${ICONS.check}</span>`;
   frag.appendChild(autoOpt);
-  // Sort levels high → low for a natural "best at top" list, keep original index for hls.currentLevel
   const order=levels.map((lv,i)=>({lv,i})).sort((a,b)=>(b.lv.height||0)-(a.lv.height||0));
   for(const {lv,i} of order){
     if(lv.height>=4320) continue;
@@ -495,18 +542,19 @@ function _startAutoLiveIndicator(){
     }
   },2000);
 }
+// Fired whenever Hls actually switches the playing quality level (either
+// because the user picked one, or ABR picked one automatically). Updates
+// the dropdown's active checkmark, the button label, and briefly flashes a
+// "1080p · Auto" badge over the video.
 function onLevelSwitched(hls,levelIdx){
   if(hls!==hlsObj) return;
   const lv=hls.levels[levelIdx];
   if(!lv) return;
   const isAuto=hls.currentLevel===-1;
-  // Keep the popup's active/checkmark state correct even when ABR (not the user) changes level
   $qualityList.querySelectorAll('.quality-opt').forEach(o=>{
     o.classList.toggle('active',isAuto?o.dataset.level==='-1':o.dataset.level===String(levelIdx));
   });
   $qualityBtnLabel.textContent=isAuto?'Auto':_levelLabel(lv);
-  // Single source of truth for the on-screen resolution badge (was previously split
-  // across a separate 4K-only badge and the buffer badge, which fought each other).
   if(lv.height){
     $bufBadge.textContent=_levelSubLabel(lv)+(isAuto?' · Auto':'');
     $bufBadge.classList.add('show');
@@ -554,6 +602,12 @@ function changeQuality(levelIdx){
   window._closeQualityPopup=closePopup;
 })();
 
+// Drives the custom progress bar / time label via requestAnimationFrame.
+// For VOD/direct files it tracks real currentTime/duration/buffered.
+// For live channels (no real duration) it instead animates a slow
+// continuously-filling bar purely as a "still live" visual cue — it does
+// not represent actual playback position. Throttles to ~2fps when paused
+// or tab is hidden to avoid burning CPU in the background.
 let _rafLastLabel='', _rafLastFill=-1, _rafLastBuf=-1;
 function startProgressTimer(){
   if(_rafLoopRunning) return;
@@ -561,9 +615,7 @@ function startProgressTimer(){
   let lastLiveUpdate=-1;
   const loop=()=>{
     if(!_rafLoopRunning) return;
-    // Stop loop entirely when tab hidden or video paused on live (not VOD seeking)
     if(document.hidden||(video.paused&&!_isVod)){
-      // Re-check in 500ms in case state changes (e.g. autoplay resumes)
       setTimeout(()=>{if(_rafLoopRunning)requestAnimationFrame(loop);},500);
       return;
     }
@@ -577,7 +629,6 @@ function startProgressTimer(){
       const label=fmtTime(video.currentTime)+' / '+fmtTime(video.duration);
       if(label!==_rafLastLabel){_rafLastLabel=label;$timeLabel.textContent=label;}
     } else {
-      // LIVE mode: only update once per second — use setTimeout not rAF to save GPU
       const nowSec=Math.floor(Date.now()/1000);
       if(nowSec!==lastLiveUpdate){
         lastLiveUpdate=nowSec;
@@ -593,7 +644,6 @@ function startProgressTimer(){
 }
 function stopProgressTimer(){
   _rafLoopRunning=false;
-  // Reset cached values so next stream starts fresh
   _rafLastLabel=''; _rafLastFill=-1; _rafLastBuf=-1;
 }
 function setTimeMode(vod){
@@ -608,7 +658,9 @@ function fmtTime(s){
   return m+':'+String(ss).padStart(2,'0');
 }
 
-// ─── Seek bar ───
+// Click-and-drag (mouse) / touch-and-drag seeking on the progress bar.
+// Only active for VOD/direct playback (_isVod) since live streams have no
+// meaningful seek target.
 let _seekDragging=false;
 function seekTo(clientX){
   if(!_isVod||!video.duration||!isFinite(video.duration)) return;
@@ -634,13 +686,10 @@ $progBar.addEventListener('mousedown',e=>{
 });
 $progBar.addEventListener('touchstart',e=>{
   _seekDragging=true; seekTo(e.touches[0].clientX);
-  e.preventDefault(); // prevent scroll while seeking
+  e.preventDefault();
   document.addEventListener('touchmove',_onSeekTouchMove,{passive:false});
   document.addEventListener('touchend',_onSeekTouchEnd,{passive:true});},{passive:false});
 
-// ─── Quality select: handled by the custom popup controller above ───
-
-// ─── Speed popup ───
 const speedBtn=document.getElementById('speedBtn');
 const speedPopup=document.getElementById('speedPopup');
 speedBtn.addEventListener('click',e=>{e.stopPropagation();speedPopup.classList.toggle('open');document.getElementById('fitPopup').classList.remove('open');if(window._closeSortPopup)window._closeSortPopup();if(window._closeQualityPopup)window._closeQualityPopup();});
@@ -661,7 +710,6 @@ function resetSpeed(){
   speedPopup.querySelectorAll('.speed-opt').forEach(o=>o.classList.toggle('active',o.dataset.sp==='1'));
 }
 
-// ─── Fit popup ───
 const fitBtn=document.querySelector('.fit-btn');
 const fitPopup=document.getElementById('fitPopup');
 fitBtn.addEventListener('click',e=>{e.stopPropagation();fitPopup.classList.toggle('open');speedPopup.classList.remove('open');if(window._closeSortPopup)window._closeSortPopup();if(window._closeQualityPopup)window._closeQualityPopup();});
@@ -682,7 +730,6 @@ fitPopup.querySelectorAll('.fit-opt').forEach(el=>{
 
 document.addEventListener('click',()=>{speedPopup.classList.remove('open');fitPopup.classList.remove('open');if(window._closeSortPopup)window._closeSortPopup();if(window._closeQualityPopup)window._closeQualityPopup();});
 
-// ─── Playback controls ───
 function togglePlay(){
   if(!currentChannel&&!_isDirectPlay){openUrlModal();return;}
   if(video.paused){
@@ -690,7 +737,7 @@ function togglePlay(){
     const p=video.play();
     if(p&&typeof p.then==='function'){
       p.then(()=>{setPlayIcon(true);pw.classList.remove('paused');}).catch(err=>{
-        if(err&&err.name==='AbortError') return; // browser interrupted — ignore
+        if(err&&err.name==='AbortError') return;
         setPlayIcon(false);pw.classList.add('paused');
       });
     } else {
@@ -707,15 +754,12 @@ function setPlayIcon(playing){
   const btn=document.getElementById('btnPlay');
   btn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   btn.title = playing ? 'Pause (Space)' : 'Play (Space)';
-  // Animate out → swap → animate in
   svg.style.transform='scale(.7)';
   svg.style.opacity='0';
   setTimeout(()=>{
     if(playing){
-      // Pause icon — two vertical bars
       svg.innerHTML='<rect x="5" y="3" width="4" height="18" rx="1.5" fill="currentColor"/><rect x="15" y="3" width="4" height="18" rx="1.5" fill="currentColor"/>';
     } else {
-      // Play icon — filled triangle
       svg.innerHTML='<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>';
     }
     svg.style.transition='transform .15s cubic-bezier(.34,1.4,.64,1), opacity .15s ease';
@@ -736,17 +780,18 @@ function setVolume(v){
   const vol=Math.max(0,Math.min(1,parseFloat(v)||0));
   _userVolume=vol; video.volume=vol; $volSlider.value=vol;
   $volSlider.style.setProperty('--vol',(vol*100).toFixed(1)+'%');
-  // Restart CSS animation without forced reflow
   $volSlider.classList.remove('vol-anim');
   requestAnimationFrame(()=>$volSlider.classList.add('vol-anim'));
   clearTimeout(_volSaveTimer);
   _volSaveTimer=setTimeout(()=>{try{localStorage.setItem(VOL_KEY,String(vol));}catch(e){}},300);
   if(vol===0&&!_muted){_muted=true;video.muted=true;updateMuteIcon(true);$volSlider.classList.add('is-muted');}
   else if(vol>0&&_muted){_muted=false;video.muted=false;updateMuteIcon(false);$volSlider.classList.remove('is-muted');}
-  else if(!_muted){ updateMuteIcon(false); } // refresh arc level
+  else if(!_muted){ updateMuteIcon(false); }
 }
 
-// ─── Fullscreen ───
+// Toggles fullscreen on the player wrapper (with a Safari/iOS-specific
+// fallback that puts just the <video> element into fullscreen, since
+// older WebKit doesn't support requestFullscreen on arbitrary elements).
 function toggleFullscreen(){
   if(document.fullscreenElement||document.webkitFullscreenElement){
     (document.exitFullscreen||document.webkitExitFullscreen).call(document);
@@ -760,9 +805,7 @@ function updateFsIcon(){
   const inFs=!!(document.fullscreenElement||document.webkitFullscreenElement);
   const el=document.getElementById('fsIcon');
   if(!el) return;
-  // Swap viewBox attrs and path for enter vs exit
   if(inFs){
-    // Exit fullscreen: arrows pointing inward (X shape corners)
     el.setAttribute('fill','none');
     el.setAttribute('stroke','currentColor');
     el.setAttribute('stroke-width','2');
@@ -785,7 +828,6 @@ function updateFsIcon(){
 document.addEventListener('fullscreenchange',updateFsIcon);
 document.addEventListener('webkitfullscreenchange',updateFsIcon);
 
-// ─── Theater mode ───
 function toggleTheater(){
   _theaterMode=!_theaterMode;
   document.getElementById('playerArea').classList.toggle('theater-mode',_theaterMode);
@@ -793,7 +835,6 @@ function toggleTheater(){
   toast(_theaterMode?'Theater mode on':'Theater mode off',1600,'theater');
 }
 
-// ─── PiP ───
 async function togglePip(){
   try{
     if(document.pictureInPictureElement){await document.exitPictureInPicture();toast('Exited PiP',1600,'pip');}
@@ -814,8 +855,8 @@ video.addEventListener('leavepictureinpicture',()=>{
   toast('Picture in Picture — Off',1400,'pip');
 });
 
-
-// ─── Prev / Next ───
+// Jumps to the next/previous channel within the currently filtered list
+// (respects active category/search), wrapping around at either end.
 function nextChannel(){
   if(!filtered_.length) return;
   if(!currentChannel){pickChannel(filtered_[0].id);return;}
@@ -833,7 +874,6 @@ function prevChannel(){
 document.getElementById('btnNext').addEventListener('click',nextChannel);
 document.getElementById('btnPrev').addEventListener('click',prevChannel);
 
-// ─── Video events ───
 let _waitingTimer=null;
 video.addEventListener('pause',()=>{
   if(!video.src&&!hlsObj) return;
@@ -854,7 +894,7 @@ video.addEventListener('waiting',()=>{
         const nm=currentChannel?.name||$nowName.textContent||'';
         showLoad(true,nm||undefined);
       }
-    },600); // only show spinner if buffering > 600ms
+    },600);
   }
 });
 video.addEventListener('playing',()=>{
@@ -870,7 +910,10 @@ video.addEventListener('ended',()=>{
 video.addEventListener('click',()=>{if(!isMobile())togglePlay();});
 video.addEventListener('dblclick',e=>{if(!isMobile())toggleFullscreen();});
 
-// ─── Stall recovery ───
+// If playback stalls for 6s straight, try to self-heal: for a direct
+// (non-HLS) stream, just reload the same src; for an Hls stream, nudge it
+// with startLoad() rather than a full teardown/rebuild; only fall back to
+// a full loadStream() retry if there's no live Hls instance to nudge.
 video.addEventListener('stalled',()=>{
   clearTimeout(_stalledTimer);
   _stalledTimer=setTimeout(()=>{
@@ -901,7 +944,6 @@ video.addEventListener('stalled',()=>{
   },6000);
 });
 
-// ─── Controls auto-hide (desktop) ───
 pw.addEventListener('mousemove',()=>{
   if(!pw.classList.contains('show-ctrl')) pw.classList.add('show-ctrl');
   clearTimeout(_ctrlTimer);
@@ -909,7 +951,6 @@ pw.addEventListener('mousemove',()=>{
 },{passive:true});
 pw.addEventListener('mouseleave',()=>{if(!video.paused){clearTimeout(_ctrlTimer);pw.classList.remove('show-ctrl');}});
 
-// ─── Mobile touch — single tap = toggle controls, double tap = fullscreen ───
 let _tapTimer=null, _tapCount=0;
 pw.addEventListener('touchstart',(e)=>{
   const ctrlEl=document.getElementById('controls');
@@ -930,7 +971,10 @@ pw.addEventListener('touchstart',(e)=>{
   }
 },{passive:true});
 
-// ─── Resize handle (desktop only) ───
+// Lets the user drag a handle to manually resize the player's height
+// (desktop/tablet). A manual resize is cleared automatically if the
+// layout crosses the mobile/desktop breakpoint or fullscreen is
+// entered/exited, since the fixed pixel height wouldn't make sense there.
 (()=>{
   const h=document.getElementById('resizeHandle');
   if(!h) return;
@@ -958,11 +1002,13 @@ pw.addEventListener('touchstart',(e)=>{
   document.addEventListener('webkitfullscreenchange',clearManualResize);
 })();
 
-
-// ─── Page visibility ───
+// Handles the tab being backgrounded/foregrounded (e.g. switching apps on
+// mobile, or another browser tab). On return to visible: if playback had
+// stalled while hidden, resume/reload the stream; restart the progress
+// loop and sleep-timer countdown. While hidden: pause the progress loop
+// and tell Hls to stop loading segments, to save bandwidth/battery.
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
-    // Only reload stream if truly broken — don't destroy a healthy HLS session
     let _alreadyResumedHls=false;
     if(!video.paused&&video.readyState<3){
       if(hlsObj){
@@ -976,7 +1022,6 @@ document.addEventListener('visibilitychange',()=>{
       }
     }
     if(!_rafLoopRunning&&(currentChannel||_isDirectPlay)&&!video.paused) startProgressTimer();
-    // Resume HLS buffer load when tab becomes visible (skip if already resumed above)
     if(hlsObj&&!video.paused&&!_alreadyResumedHls){try{hlsObj.startLoad(-1);}catch(e){}}
     if(_sleepTimer&&!_sleepCountdownTimer){
       const tick=()=>{
@@ -992,8 +1037,6 @@ document.addEventListener('visibilitychange',()=>{
     stopProgressTimer();
     clearTimeout(_stalledTimer); _stalledTimer=null;
     clearTimeout(_sleepCountdownTimer); _sleepCountdownTimer=null;
-    // Pause HLS buffer load when tab hidden to save bandwidth
     if(hlsObj){try{hlsObj.stopLoad();}catch(e){}}
   }
 });
-

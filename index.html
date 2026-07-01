@@ -8,7 +8,7 @@
 <meta name="robots" content="index,follow">
 <meta name="color-scheme" content="dark">
 <title>Xtra TV – Live TV</title>
-<!-- v22: Bug fixes, UI/animation polish, dead-code & CSS dedup, performance optimizations -->
+<!-- Resource hints: warm up connections to the CDNs used for fonts, hls.js and the remote channel-list JSON, so the actual requests later resolve faster. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
@@ -16,10 +16,11 @@
 <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
 <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
-<!-- Font CSS loaded non-blocking -->
 <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&font-display=swap" as="style" fetchpriority="low" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&font-display=swap"></noscript>
+<!-- Must stay in sync with JSON_URL in js/storage.js — this preloads the same channel-list endpoint the app fetches on load. -->
 <link rel="preload" href="https://cdn.jsdelivr.net/gh/bugsfreeweb/LiveTVCollector@main/LiveTV/Bangladesh/LiveTV.json" as="fetch" crossorigin fetchpriority="high">
+<!-- Version here must match the hls.js version lazy-loaded by ensureHls() in js/player.js, or this preload is wasted. -->
 <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.6.13/hls.min.js" as="script" crossorigin fetchpriority="high">
 <link rel="stylesheet" href="css/variables.css">
 <link rel="stylesheet" href="css/animations.css">
@@ -27,8 +28,26 @@
 <link rel="stylesheet" href="css/responsive.css">
 </head>
 <body>
+<!-- Hidden SVG icon sprite: each <symbol> below is referenced elsewhere via <use href="#ic-...">, so icons only need to be defined once here. -->
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden" focusable="false">
+<defs>
+<symbol id="ic-tv" viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></symbol>
+<symbol id="ic-clock" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 9 9 9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 2a7 7 0 0 1 7 7 7 7 0 0 1-7 7 7 7 0 0 1-7-7 7 7 0 0 1 7-7zm-1 2v6l5 3-.75-1.23L13 13.5V7h-2z"/></symbol>
+<symbol id="ic-link" viewBox="0 0 24 24"><path d="M17 7H13v2h4c1.65 0 3 1.35 3 3s-1.35 3-3 3h-4v2h4c2.76 0 5-2.24 5-5s-2.24-5-5-5zm-6 8H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-2zm-3-4h8v2H8z"/></symbol>
+<symbol id="ic-keyboard" viewBox="0 0 24 24"><path d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 5H5v-2h2v2zm9 0H8v-2h8v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2zm3 6h-2v-2h2v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2z"/></symbol>
+<symbol id="ic-info" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></symbol>
+<symbol id="ic-close" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+<symbol id="ic-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
+<symbol id="ic-arrow-up-az" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></symbol>
+<symbol id="ic-arrow-down-za" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></symbol>
+<symbol id="ic-telegram" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8-1.7 8.02c-.12.55-.46.68-.93.42l-2.58-1.9-1.24 1.2c-.14.14-.26.26-.52.26l.19-2.66 4.83-4.37c.21-.19-.05-.29-.32-.1l-5.97 3.76-2.57-.8c-.56-.17-.57-.56.12-.83l10.02-3.86c.47-.17.88.11.67.86z"/></symbol>
+<symbol id="ic-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+<symbol id="ic-fit-corners" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+<symbol id="ic-sort-arrows" viewBox="0 0 24 24"><polyline points="7 11 7 3"/><polyline points="4 6 7 3 10 6"/><polyline points="17 13 17 21"/><polyline points="14 18 17 21 20 18"/></symbol>
+</defs>
+</svg>
 
-<!-- ══ PAGE SPLASH LOADING SCREEN ══ -->
+<!-- Splash/loading screen shown until the channel list has loaded; hidden and removed by js/splash.js. -->
 <div id="splashScreen" role="status" aria-live="polite" aria-label="Loading Xtra TV">
   <div class="splash-grid-bg"></div>
   <div class="splash-scanline"></div>
@@ -48,7 +67,7 @@
     <div class="splash-orbit-dot"></div>
     <div class="splash-orbit-dot2"></div>
     <div class="splash-logo-center" style="font-size:0">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff" style="opacity:.95"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></svg>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff" style="opacity:.95"><use href="#ic-tv"></use></svg>
     </div>
   </div>
   <div class="splash-brand">Xtra TV</div>
@@ -65,21 +84,22 @@
 </div>
 
 <div class="root">
+<!-- Top header bar: logo, sleep timer indicator, and the action buttons (sleep, contact, stream URL, shortcuts, about) — desktop buttons and their mobile icon-only equivalents are separate elements below. -->
 <header>
   <a class="logo" href="#">
     <div class="logo-mark">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><use href="#ic-tv"></use></svg>
     </div>
     <span class="logo-text">Xtra TV</span>
     <span class="live-badge">LIVE</span>
   </a>
   <div class="hdr-right">
     <div class="sleep-indicator" id="sleepIndicator" title="Sleep timer active – click to cancel">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 9 9 9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 2a7 7 0 0 1 7 7 7 7 0 0 1-7 7 7 7 0 0 1-7-7 7 7 0 0 1 7-7zm-1 2v6l5 3-.75-1.23L13 13.5V7h-2z"/></svg>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-clock"></use></svg>
       <span id="sleepCountdown"></span>
     </div>
     <button class="hdr-btn purple mob-hide" onclick="openSleepModal()" id="sleepBtn" title="Sleep Timer (Z)">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 9 9 9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 2a7 7 0 0 1 7 7 7 7 0 0 1-7 7 7 7 0 0 1-7-7 7 7 0 0 1 7-7zm-1 2v6l5 3-.75-1.23L13 13.5V7h-2z"/></svg>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><use href="#ic-clock"></use></svg>
       <span class="cb-text">Sleep</span>
     </button>
     <a class="hdr-btn green mob-hide" href="https://t.me/JahidulXtra" target="_blank" rel="noopener noreferrer" title="Contact on Telegram">
@@ -87,41 +107,42 @@
       <span class="cb-text">Contact</span>
     </a>
     <button class="hdr-btn teal mob-hide" onclick="openUrlModal()">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M17 7H13v2h4c1.65 0 3 1.35 3 3s-1.35 3-3 3h-4v2h4c2.76 0 5-2.24 5-5s-2.24-5-5-5zm-6 8H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-2zm-3-4h8v2H8z"/></svg>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><use href="#ic-link"></use></svg>
       <span class="cb-text">Stream</span>
     </button>
     <button class="icon-btn" id="kbHelpBtn" title="Keyboard shortcuts (?)">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 5H5v-2h2v2zm9 0H8v-2h8v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2zm3 6h-2v-2h2v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-keyboard"></use></svg>
     </button>
     <button class="icon-btn" id="aboutBtn" title="About / Developer">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-info"></use></svg>
     </button>
     <button class="mob-icon-btn" onclick="openSleepModal()" title="Sleep Timer" style="background:rgba(124,58,237,.18);border-color:rgba(124,58,237,.4);color:var(--accent2)">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 9 9 9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 2a7 7 0 0 1 7 7 7 7 0 0 1-7 7 7 7 0 0 1-7-7 7 7 0 0 1 7-7zm-1 2v6l5 3-.75-1.23L13 13.5V7h-2z"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-clock"></use></svg>
     </button>
     <button class="mob-icon-btn" onclick="openUrlModal()" title="Stream URL" style="background:rgba(20,184,166,.18);border-color:rgba(20,184,166,.4);color:#2dd4bf">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7H13v2h4c1.65 0 3 1.35 3 3s-1.35 3-3 3h-4v2h4c2.76 0 5-2.24 5-5s-2.24-5-5-5zm-6 8H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-2zm-3-4h8v2H8z"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-link"></use></svg>
     </button>
     <button class="mob-icon-btn" id="aboutBtnMob" title="About / Developer" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15);color:#aaaacc">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-info"></use></svg>
     </button>
     <button class="mob-search-btn" id="mobSearchBtn" title="Search channels"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
     <div class="hdr-count" id="hdrCount"></div>
   </div>
 </header>
 
-<!-- Mobile Search Overlay -->
+<!-- Full-screen search overlay used only on mobile; kept in sync with the desktop #searchInput by js/search.js. -->
 <div class="mob-search-overlay" id="mobSearchOverlay">
   <input type="search" class="mob-search-input" id="mobSearchInput" placeholder="Search channels…" autocomplete="off" autocorrect="off" autocapitalize="off">
-  <button class="mob-search-close" id="mobSearchClose"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  <button class="mob-search-close" id="mobSearchClose"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-close"></use></svg></button>
 </div>
 
-<!-- URL / Network Stream Modal -->
+<!-- "Play a network stream" modal — lets the user paste any direct HLS/MP4/MKV/WebM/MP3 URL. Handled by openUrlModal()/playFromUrlModal() in js/ui.js. -->
 <div class="modal-backdrop" id="urlModalBackdrop">
   <div class="modal-box">
-    <h3><span class="ic" aria-hidden="true" style="margin-right:5px;vertical-align:-2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7H13v2h4c1.65 0 3 1.35 3 3s-1.35 3-3 3h-4v2h4c2.76 0 5-2.24 5-5s-2.24-5-5-5zm-6 8H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-2zm-3-4h8v2H8z"/></svg></span>Network Stream</h3>
-    <p class="modal-hint">Supports HLS (.m3u8), MP4, MKV, WebM, MP3 and any direct stream URL.</p>
-    <input type="url" id="urlInput" placeholder="https://example.com/stream.m3u8" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+    <h3><span class="ic" aria-hidden="true" style="margin-right:5px;vertical-align:-2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-link"></use></svg></span>Network Stream</h3>
+    <p class="modal-hint">Supports HLS (.m3u, .m3u8), MP4, MKV, WebM, MP3 and any direct stream URL.</p>
+    <input type="url" id="urlInput" placeholder="https://example.com/stream.m3u" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+    <p class="modal-err-msg" id="urlErrMsg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span id="urlErrText">Enter a valid stream URL</span></p>
     <input type="text" id="urlTitleInput" placeholder="Title (optional)">
     <div class="modal-footer">
       <button class="btn-cancel" id="umCancel">Cancel</button>
@@ -129,10 +150,10 @@
     </div>
   </div>
 </div>
-<!-- Sleep Timer Modal -->
+<!-- Sleep timer modal — preset and custom durations, logic in js/sleep-timer.js. -->
 <div class="modal-backdrop" id="sleepModalBackdrop">
   <div class="modal-box" style="max-width:360px">
-    <h3><span class="ic" aria-hidden="true" style="margin-right:5px;vertical-align:-2px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 9 9 9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 2a7 7 0 0 1 7 7 7 7 0 0 1-7 7 7 7 0 0 1-7-7 7 7 0 0 1 7-7zm-1 2v6l5 3-.75-1.23L13 13.5V7h-2z"/></svg></span>Sleep Timer</h3>
+    <h3><span class="ic" aria-hidden="true" style="margin-right:5px;vertical-align:-2px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-clock"></use></svg></span>Sleep Timer</h3>
     <p class="modal-hint">Video will automatically pause after the selected time. You can also set a custom duration.</p>
     <div class="sleep-grid" id="sleepGrid">
       <button class="sleep-opt" data-min="5">5 min</button>
@@ -148,15 +169,15 @@
     </div>
     <div class="modal-footer">
       <button class="btn-cancel" id="sleepCancel">Cancel</button>
-      <button class="btn-cancel hidden" id="sleepClear"><span class="ic" aria-hidden="true" style="margin-right:4px;vertical-align:-2px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></span>Clear Timer</button>
+      <button class="btn-cancel hidden" id="sleepClear"><span class="ic" aria-hidden="true" style="margin-right:4px;vertical-align:-2px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-trash"></use></svg></span>Clear Timer</button>
     </div>
   </div>
 </div>
 
-<!-- Keyboard Shortcuts Modal -->
+<!-- Keyboard shortcuts reference modal — purely static content, toggled by js/keyboard.js. Keep this list in sync with the switch(e.key) cases there. -->
 <div class="modal-backdrop" id="kbModalBackdrop">
   <div class="modal-box kb-modal">
-    <h3><span class="ic" aria-hidden="true" style="margin-right:5px;vertical-align:-2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 5H5v-2h2v2zm9 0H8v-2h8v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2zm3 6h-2v-2h2v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg></span>Keyboard Shortcuts</h3>
+    <h3><span class="ic" aria-hidden="true" style="margin-right:5px;vertical-align:-2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-keyboard"></use></svg></span>Keyboard Shortcuts</h3>
     <div class="kb-grid">
       <span class="kb-key">Space / K</span><span class="kb-desc">Play / Pause</span>
       <span class="kb-key">M</span><span class="kb-desc">Mute / Unmute</span>
@@ -167,7 +188,7 @@
       <span class="kb-key">Z</span><span class="kb-desc">Sleep Timer</span>
       <div class="kb-sep"></div>
       <span class="kb-key">← →</span><span class="kb-desc">Prev / Next channel (or seek ±10s on VOD)</span>
-      <span class="kb-key"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></span><span class="kb-desc">Volume up / down</span>
+      <span class="kb-key"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><use href="#ic-arrow-up-az"></use></svg> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><use href="#ic-arrow-down-za"></use></svg></span><span class="kb-desc">Volume up / down</span>
       <div class="kb-sep"></div>
       <span class="kb-key">1</span><span class="kb-desc">Video fit: Contain</span>
       <span class="kb-key">2</span><span class="kb-desc">Video fit: Crop</span>
@@ -182,12 +203,12 @@
   </div>
 </div>
 
-<!-- About / Developer Modal -->
+<!-- "About / Developer" modal — static credit card, opened from #aboutBtn / #aboutBtnMob (wired in js/ui.js). -->
 <div class="modal-backdrop" id="aboutModalBackdrop">
   <div class="modal-box" style="max-width:360px;text-align:center">
     <div style="position:relative;display:inline-block;margin-bottom:14px">
       <div style="width:64px;height:64px;background:linear-gradient(135deg,#9d5ff5,#c084fc);border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto;box-shadow:0 6px 28px rgba(124,58,237,.45),0 0 0 3px rgba(124,58,237,.2);animation:logo-shimmer 4s linear infinite">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="#fff"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></svg>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="#fff"><use href="#ic-tv"></use></svg>
       </div>
       <div style="position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;background:var(--live);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center">
         <div style="width:7px;height:7px;background:#fff;border-radius:50%;animation:blink 2s infinite"></div>
@@ -208,7 +229,7 @@
         <div class="about-dev-role">Developer &amp; Creator</div>
       </div>
       <a href="https://t.me/JahidulXtra" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:rgba(34,158,217,.15);border:1px solid rgba(34,158,217,.35);border-radius:8px;color:#60c8f0;text-decoration:none;flex-shrink:0;transition:background .15s;cursor:pointer" title="Contact on Telegram">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8-1.7 8.02c-.12.55-.46.68-.93.42l-2.58-1.9-1.24 1.2c-.14.14-.26.26-.52.26l.19-2.66 4.83-4.37c.21-.19-.05-.29-.32-.1l-5.97 3.76-2.57-.8c-.56-.17-.57-.56.12-.83l10.02-3.86c.47-.17.88.11.67.86z"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-telegram"></use></svg>
       </a>
     </div>
     <div style="margin-top:14px;padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;font-size:9px;color:#5a5aaa;line-height:1.8;letter-spacing:.2px">
@@ -220,7 +241,7 @@
   </div>
 </div>
 
-<!-- Report to Admin Modal -->
+<!-- "Report a broken channel" modal — builds a pre-filled Telegram message to the developer. See openReportModal() in js/ui.js. -->
 <div class="modal-backdrop" id="reportModalBackdrop">
   <div class="modal-box" style="max-width:380px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
@@ -234,14 +255,14 @@
       Use this to report a channel that is not working or has a broken stream. Your report will help the admin fix it quickly.
     </div>
     <div id="reportChInfo" style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.28);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:#cccce0;display:flex;align-items:center;gap:10px">
-      <span style="font-size:18px;flex-shrink:0;display:inline-flex" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></svg></span>
+      <span style="font-size:18px;flex-shrink:0;display:inline-flex" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-tv"></use></svg></span>
       <div>
         <div style="font-size:9px;color:var(--muted);margin-bottom:2px;letter-spacing:.4px;text-transform:uppercase">Reporting Channel</div>
         <span id="reportChName" style="font-weight:700;color:#fff;font-size:12px">Channel Name</span>
       </div>
     </div>
     <a id="reportTelegramBtn" href="#" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(135deg,#229ED9,#1a8bbf);color:#fff;border:none;font-size:13px;font-weight:700;padding:13px 18px;border-radius:11px;cursor:pointer;text-decoration:none;transition:opacity .15s,transform .12s;box-shadow:0 4px 20px rgba(34,158,217,.4);letter-spacing:.2px">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8-1.7 8.02c-.12.55-.46.68-.93.42l-2.58-1.9-1.24 1.2c-.14.14-.26.26-.52.26l.19-2.66 4.83-4.37c.21-.19-.05-.29-.32-.1l-5.97 3.76-2.57-.8c-.56-.17-.57-.56.12-.83l10.02-3.86c.47-.17.88.11.67.86z"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-telegram"></use></svg>
       Send Report via Telegram
     </a>
     <p style="font-size:10px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.7">Telegram will open with the message pre-filled — just tap <strong style="color:#bbb">Send</strong> to report.</p>
@@ -251,9 +272,11 @@
   </div>
 </div>
 
+<!-- Main layout: video player + channel grid on the left, category/search sidebar on the right. -->
 <div class="body-wrap">
   <div class="player-area" id="playerArea">
     <div class="player-outer">
+      <!-- fit-contain/cover/fill class here is swapped by setFitMode() in js/player.js to control how the video fills this box. -->
       <div class="player-wrapper fit-contain" id="playerWrapper">
         <video id="videoPlayer" playsinline webkit-playsinline x5-playsinline style="touch-action:manipulation"></video>
 
@@ -264,6 +287,7 @@
           <div class="audio-bars" id="audioBars"></div>
         </div>
 
+        <!-- Three mutually-exclusive overlay states shown on top of the <video>: empty (nothing selected), load (buffering/connecting) and err (playback failed). Only one has the "show" class at a time — toggled in js/player.js. -->
         <div class="overlay ov-empty show" id="ovEmpty">
           <div class="ei">
             <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" style="opacity:.45;color:#9d5ff5"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
@@ -272,13 +296,12 @@
           <p class="es">Choose a category → pick a channel</p>
         </div>
         <div class="overlay ov-load" id="ovLoad">
-          <!-- Orbit system -->
           <div class="load-orbit-system">
             <div class="load-center-ring"></div>
             <div class="load-ring-outer"></div>
             <div class="load-ring-inner"></div>
             <div class="load-center-logo">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" style="opacity:.9"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" style="opacity:.9"><use href="#ic-tv"></use></svg>
             </div>
             <div class="load-dot-track"><div class="load-dot"></div></div>
             <div class="load-dot-track"><div class="load-dot"></div></div>
@@ -298,7 +321,6 @@
             <div class="load-wave-bar"></div>
             <div class="load-wave-bar"></div>
           </div>
-          <!-- Credit below channel loading -->
           <div class="load-credit">Xtra TV <span>by Jahidul Hassan Parvez</span></div>
         </div>
         <div class="overlay ov-err" id="ovErr">
@@ -313,22 +335,20 @@
               Try again
             </button>
             <a class="report-btn" id="reportBtn" href="#" onclick="openReportModal();return false;" title="Report this channel to admin on Telegram">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8-1.7 8.02c-.12.55-.46.68-.93.42l-2.58-1.9-1.24 1.2c-.14.14-.26.26-.52.26l.19-2.66 4.83-4.37c.21-.19-.05-.29-.32-.1l-5.97 3.76-2.57-.8c-.56-.17-.57-.56.12-.83l10.02-3.86c.47-.17.88.11.67.86z"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-telegram"></use></svg>
               Report
             </a>
           </div>
         </div>
 
-        <!-- Controls -->
+        <!-- Player control bar: play/pause, mute/volume, progress, speed, quality, fit mode, theater, PiP, fullscreen. All wired to functions in js/player.js. -->
         <div class="controls" id="controls">
           <button class="ctrl-btn play-btn" id="btnPlay" onclick="togglePlay()" title="Play/Pause (Space)" aria-label="Play">
-            <!-- Play icon — filled triangle, clean -->
             <svg class="play-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" id="playIcon" aria-hidden="true">
               <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>
             </svg>
           </button>
           <button class="ctrl-btn mute-btn" id="btnMute" onclick="toggleMute()" title="Mute/Unmute (M)" aria-label="Mute">
-            <!-- Volume icon — stroke-based, clean Feather style -->
             <svg class="mute-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="muteIcon" aria-hidden="true">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" opacity=".9"/>
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14" class="vol-arc vol-arc-outer"/>
@@ -345,7 +365,6 @@
             </div>
             <div class="time-label" id="timeLabel">● LIVE</div>
           </div>
-          <!-- Speed popup -->
           <div class="speed-wrap" id="speedWrap">
             <button class="speed-btn" id="speedBtn" title="Playback Speed (S)">1×</button>
             <div class="speed-popup" id="speedPopup">
@@ -359,7 +378,6 @@
               <div class="speed-opt" data-sp="2">2×</div>
             </div>
           </div>
-          <!-- Quality popup -->
           <div class="quality-wrap" id="qualityWrap">
             <button class="quality-btn" id="qualityBtn" title="Quality">
               <span class="ic quality-btn-ic" aria-hidden="true"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span>
@@ -372,30 +390,27 @@
                   <span class="ic quality-opt-ic" aria-hidden="true"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg></span>
                   <span class="quality-opt-label">Auto</span>
                   <span class="quality-opt-live" id="qualityAutoLive"></span>
-                  <span class="quality-opt-check ic" aria-hidden="true"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <span class="quality-opt-check ic" aria-hidden="true"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-check"></use></svg></span>
                 </div>
               </div>
             </div>
           </div>
-          <!-- Fit popup -->
           <div class="fit-wrap" id="fitWrap">
-            <button class="fit-btn" title="Video fit (1/2/3)"><span class="ic"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></span> FIT</button>
+            <button class="fit-btn" title="Video fit (1/2/3)"><span class="ic"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-fit-corners"></use></svg></span> FIT</button>
             <div class="fit-popup" id="fitPopup">
-              <div class="fit-opt active" data-fit="contain"><span class="ic"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></span> Fit</div>
+              <div class="fit-opt active" data-fit="contain"><span class="ic"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-fit-corners"></use></svg></span> Fit</div>
               <div class="fit-opt" data-fit="cover"><span class="ic"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg></span> Crop</div>
               <div class="fit-opt" data-fit="fill"><span class="ic"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="8 7 3 12 8 17"/><polyline points="16 7 21 12 16 17"/></svg></span> Stretch</div>
             </div>
           </div>
           <button class="ctrl-btn theater-btn" id="theaterBtn" onclick="toggleTheater()" title="Theater mode (T)"><svg id="theaterIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><rect x="2" y="7" width="20" height="13" rx="2"/><path d="M2 10h20"/><path d="M8 20v2M16 20v2"/></svg></button>
           <button class="ctrl-btn pip-btn" id="btnPip" title="Picture in Picture (P)" style="display:none">
-            <!-- Modern PiP icon: outer screen + floating inset window -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" id="pipIcon">
               <rect x="2" y="4" width="20" height="16" rx="2.5"/>
               <rect x="12" y="12" width="8" height="5.5" rx="1.5" fill="currentColor" stroke="none"/>
             </svg>
           </button>
           <button class="ctrl-btn fs-btn" id="btnFs" onclick="toggleFullscreen()" title="Fullscreen (F)">
-            <!-- Modern Fullscreen icon: four corner arrows -->
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="fsIcon">
               <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
               <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
@@ -409,8 +424,9 @@
 
     <div class="resize-handle" id="resizeHandle" title="Drag to resize"></div>
 
+    <!-- "Now playing" bar: current channel logo/name/category, favourite toggle, and prev/next channel navigation. Updated by playChannel()/playDirect(). -->
     <div class="info-bar">
-      <div class="now-logo" id="nowLogo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-9-4.5v-5l4 2.5-4 2.5z"/></svg></div>
+      <div class="now-logo" id="nowLogo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><use href="#ic-tv"></use></svg></div>
       <div class="now-info">
         <h2 id="nowName">Select a channel</h2>
         <p id="nowCat">Xtra TV — Live Streaming</p>
@@ -425,29 +441,31 @@
       </div>
     </div>
 
+    <!-- Channel grid for the currently selected category/search — populated by renderGrid() in js/channels.js. -->
     <div class="grid-section">
       <div class="grid-header">
         <div class="grid-title" id="gridTitle">All Channels</div>
         <div class="grid-count" id="gridCount"></div>
         <div class="sort-wrap" id="sortWrap">
-          <button class="sort-btn" id="sortBtn" title="Sort channels"><span class="ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 11 7 3"/><polyline points="4 6 7 3 10 6"/><polyline points="17 13 17 21"/><polyline points="14 18 17 21 20 18"/></svg></span> Sort <span class="sort-chevron ic"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span></button>
+          <button class="sort-btn" id="sortBtn" title="Sort channels"><span class="ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-sort-arrows"></use></svg></span> Sort <span class="sort-chevron ic"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span></button>
           <div class="sort-popup" id="sortPopup">
             <div class="sort-popup-title">Sort Channels</div>
-            <div class="sort-opt active" data-sort="default"><span class="sort-opt-icon ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 11 7 3"/><polyline points="4 6 7 3 10 6"/><polyline points="17 13 17 21"/><polyline points="14 18 17 21 20 18"/></svg></span> Default<span class="sort-opt-check ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
-            <div class="sort-opt" data-sort="az"><span class="sort-opt-icon ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></span> A → Z<span class="sort-opt-check ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
-            <div class="sort-opt" data-sort="za"><span class="sort-opt-icon ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></span> Z → A<span class="sort-opt-check ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+            <div class="sort-opt active" data-sort="default"><span class="sort-opt-icon ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-sort-arrows"></use></svg></span> Default<span class="sort-opt-check ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-check"></use></svg></span></div>
+            <div class="sort-opt" data-sort="az"><span class="sort-opt-icon ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-arrow-up-az"></use></svg></span> A → Z<span class="sort-opt-check ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-check"></use></svg></span></div>
+            <div class="sort-opt" data-sort="za"><span class="sort-opt-icon ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-arrow-down-za"></use></svg></span> Z → A<span class="sort-opt-check ic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-check"></use></svg></span></div>
           </div>
         </div>
-        <button class="sort-btn" id="clearHistoryBtn" title="Clear watch history" style="display:none"><span class="ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></span> Clear</button>
+        <button class="sort-btn" id="clearHistoryBtn" title="Clear watch history" style="display:none"><span class="ic" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-trash"></use></svg></span> Clear</button>
       </div>
       <div class="ch-grid" id="channelGrid"></div>
     </div>
   </div>
 
+  <!-- Sidebar: search box + category/favourites/history list. Rendered by renderGroupList() in js/groups.js. -->
   <aside class="sidebar">
     <div class="sb-search">
       <input type="search" class="search-box" id="searchInput" placeholder="Search channels…" autocomplete="off" autocorrect="off" autocapitalize="off">
-      <button class="search-clear" id="searchClear" title="Clear search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <button class="search-clear" id="searchClear" title="Clear search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#ic-close"></use></svg></button>
     </div>
     <div class="group-list" id="groupList">
       <div style="padding:6px;width:100%">
@@ -460,6 +478,14 @@
 
 <div class="toast" id="toast"></div>
 
+<!--
+  All scripts share one global scope (no modules/bundler) and several inline
+  onclick="..." handlers above depend on functions/variables defined by an
+  earlier file. LOAD ORDER MATTERS — do not reorder these tags without
+  re-checking the dependency chain (see README.md "Architecture Notes"):
+  storage → icons → utils → player → channels → favorites → groups →
+  history → ui → sleep-timer → keyboard → search → splash → app
+-->
 <script src="js/storage.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/utils.js"></script>
